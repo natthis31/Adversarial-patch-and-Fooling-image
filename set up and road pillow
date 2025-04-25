@@ -1,0 +1,3 @@
+!pip -q install --upgrade pillow==10.2.0 torch torchvision torchaudio fiftyone openimages
+import torch, torchvision, pillow
+print("torch", torch.__version__, "| torchvision", torchvision.__version__, "| pillow", pillow.__version__)
