@@ -1,0 +1,19 @@
+import os, shutil, tqdm, fiftyone.zoo as foz
+
+root = "clean_flowers"
+shutil.rmtree(root, ignore_errors=True)
+os.makedirs(f"{root}/Flower", exist_ok=True)
+os.makedirs(f"{root}/Car",    exist_ok=True)
+
+def copy_cls(cls, n):
+    ds = foz.load_zoo_dataset("open-images-v7", split="train",
+                              classes=[cls], max_samples=n,
+                              label_types=["classifications"])
+    for s in tqdm.tqdm(ds, desc=f"Copy {cls:6s}"):
+        shutil.copy(s.filepath, f"{root}/{cls}/{os.path.basename(s.filepath)}")
+
+copy_cls("Flower", 2000)
+copy_cls("Car",    2000)
+
+# 枚数確認
+!find clean_flowers -maxdepth 2 -type f | wc -l   # → 4000
