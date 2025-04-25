@@ -1,0 +1,69 @@
+import torch, torch.nn as nn, torch.optim as optim
+import torchvision.transforms as T, torchvision.models as models
+from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader, Dataset
+from sklearn.model_selection import train_test_split
+from PIL import Image
+import numpy as np, os
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# transforms
+train_tf = T.Compose([
+    T.RandomResizedCrop(224, scale=(0.5,1.0)),
+    T.RandomHorizontalFlip(),
+    T.RandomRotation(20),
+    T.ColorJitter(brightness=.3, contrast=.3, saturation=.3),  # ← hue 無し
+    T.ToTensor(),
+    T.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225]),
+])
+val_tf = T.Compose([
+    T.Resize(256), T.CenterCrop(224),
+    T.ToTensor(),
+    T.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225]),
+])
+
+# dataset split
+base_ds = ImageFolder(root)
+train_idx, val_idx = train_test_split(
+    np.arange(len(base_ds)), test_size=0.2,
+    stratify=[s[1] for s in base_ds.samples], random_state=42)
+
+class Wrap(Dataset):
+    def __init__(self, baseds, idxs, tf):
+        self.baseds, self.idxs, self.tf = baseds, idxs, tf
+    def __len__(self): return len(self.idxs)
+    def __getitem__(self, i):
+        p,l = base_ds.samples[self.idxs[i]]
+        return self.tf(Image.open(p).convert("RGB")), l
+
+train_ds = Wrap(base_ds, train_idx, train_tf)
+val_ds   = Wrap(base_ds, val_idx,   val_tf)
+dl_train = DataLoader(train_ds, 32, True,  num_workers=2)
+dl_val   = DataLoader(val_ds,   32, False, num_workers=2)
+
+# model (layer4 + fc learnable)
+net = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+for n,p in net.named_parameters():
+    p.requires_grad = n.startswith("layer4") or n.startswith("fc")
+net.fc = nn.Linear(net.fc.in_features, 2)
+net.to(device)
+
+opt = optim.AdamW(filter(lambda p:p.requires_grad, net.parameters()),
+                  lr=3e-4, weight_decay=1e-4)
+loss_fn = nn.CrossEntropyLoss()
+
+for ep in range(10):
+    net.train(); run=0
+    for x,y in dl_train:
+        x,y = x.to(device), y.to(device)
+        opt.zero_grad(); l=loss_fn(net(x),y); l.backward(); opt.step()
+        run += l.item()*x.size(0)
+    net.eval(); cor=tot=0
+    with torch.no_grad():
+        for x,y in dl_val:
+            cor += (net(x.to(device)).argmax(1).cpu()==y).sum().item(); tot+=y.size(0)
+    print(f"Epoch {ep+1:02d} | Val Acc {100*cor/tot:.2f}%")
+
+torch.save(net.state_dict(), "flower_car_cls.pt")
+print("✅ model saved")
