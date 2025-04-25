@@ -1,0 +1,8 @@
+labels = ['Car','Flower']
+def pred(p):
+    x = val_tf(Image.open(p).convert("RGB")).unsqueeze(0).to(device)
+    print(f"{p:25s} -> {labels[ net(x).argmax(1).item() ]}")
+
+pred("flower.jpg")              # Flower
+pred("adversarial_flower.png")  # Car
+pred("fooling_flower.png")      # Flower
